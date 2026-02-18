@@ -19,7 +19,7 @@ from services.db import (
     get_user_client_type,
     set_ticket_thread_id,
     set_ticket_topic_card_message_id,
-    get_support_active_tickets,
+    get_support_active_tickets, get_onboarding_state, get_lead_by_client_tg_id, mark_user_as_paid,
 )
 from services.support_chat import (
     send_escalation_to_admin,
@@ -367,8 +367,9 @@ async def ticket_callback(cb: CallbackQuery):
             return
 
         # 🏷 Меняем тип клиента
-        from services.db import set_user_client_type
-        await set_user_client_type(client_tg_id, ClientType.EXISTING)
+        from services.db import set_client_type
+        await set_client_type(client_tg_id, ClientType.EXISTING)
+        await mark_user_as_paid(client_tg_id)
 
         # 🔒 Закрываем тикет
         # await update_ticket_status(ticket_id, "CLOSED")
@@ -540,3 +541,39 @@ async def support_reply_message(message: Message):
         if thread_id is not None:
             err_kw["message_thread_id"] = thread_id
         await message.bot.send_message(chat_id=config.support_group_id, **err_kw)
+
+
+@router.callback_query(F.data.startswith("view_onboarding:"))
+async def view_onboarding_cb(cb: CallbackQuery):
+    ticket_id = int(cb.data.split(":")[1])
+
+    # Получаем тикет
+    ticket = await get_ticket(ticket_id)
+
+    if not ticket:
+        await cb.answer("Тикет не найден", show_alert=True)
+        return
+
+    client_tg_id = ticket["client_user_id"]
+
+    # Получаем онбординг из leads
+    lead = await get_lead_by_client_tg_id(client_tg_id)
+
+    if not lead or not lead.get("answers"):
+        await cb.answer("Онбординга в системе нет", show_alert=True)
+        return
+
+    answers = lead["answers"]
+    if isinstance(answers, str):
+        import json
+        answers = json.loads(answers) if answers else {}
+
+    if not answers:
+        await cb.answer("Ответов нет", show_alert=True)
+        return
+
+    # Формируем текст онбординга
+    text_lines = [f"{k}: {v['text']}" for k, v in answers.items()]
+    text = "\n".join(text_lines)
+
+    await cb.message.answer(f"Онбординг клиента \n{text}")

@@ -13,40 +13,58 @@ async def get_or_create_user(
     role: str = "client",
     admin_ids: list[int] | None = None,
 ) -> tuple[dict, ClientType, bool]:
-    """
-    Получить или создать пользователя.
-    Возвращает (user_row, client_type).
-    """
+
     pool = get_pool()
+
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
-            "SELECT * FROM users WHERE tg_id = $1", tg_id
+            "SELECT * FROM users WHERE tg_id = $1",
+            tg_id
         )
+
         if row:
             await conn.execute(
-                "UPDATE users SET username = $1, last_seen = NOW() WHERE tg_id = $2",
-                username or row["username"], tg_id
+                """
+                UPDATE users
+                SET username = $1,
+                    last_seen = NOW()
+                WHERE tg_id = $2
+                """,
+                username or row["username"],
+                tg_id
             )
-            row = await conn.fetchrow("SELECT * FROM users WHERE tg_id = $1", tg_id)
-            # Определяем client_type
-            has_onboarding = row["onboarding_completed_at"] is not None
-            tickets_count = await conn.fetchval(
-                "SELECT COUNT(*) FROM tickets WHERE client_user_id = $1", tg_id
-            )
-            client_type = ClientType.EXISTING if has_onboarding and tickets_count > 0 else ClientType.NEW
 
+            row = await conn.fetchrow(
+                "SELECT * FROM users WHERE tg_id = $1",
+                tg_id
+            )
+
+            client_type = ClientType(row["client_type"])
             is_paid = row.get("is_paid", False)
+
             return dict(row), client_type, is_paid
 
+        # если пользователя нет
         initial_role = "admin" if (admin_ids and tg_id in admin_ids) else role
+
         await conn.execute(
-            """INSERT INTO users (tg_id, username, role, client_type, is_blocked)
-               VALUES ($1, $2, $3, $4, FALSE)""",
-            tg_id, username, initial_role, ClientType.NEW.value
+            """
+            INSERT INTO users (tg_id, username, role, client_type, is_blocked, is_paid)
+            VALUES ($1, $2, $3, $4, FALSE, FALSE)
+            """,
+            tg_id,
+            username,
+            initial_role,
+            ClientType.NEW.value,
         )
-        row = await conn.fetchrow("SELECT * FROM users WHERE tg_id = $1", tg_id)
-        is_paid = row.get("is_paid", False)
-        return dict(row), ClientType.NEW, is_paid
+
+        row = await conn.fetchrow(
+            "SELECT * FROM users WHERE tg_id = $1",
+            tg_id
+        )
+
+        return dict(row), ClientType.NEW, False
+
 
 
 async def get_user_client_type(tg_id: int) -> str:
@@ -116,90 +134,19 @@ async def save_onboarding_answer(tg_id: int, step: int, answer: str | dict) -> N
             next_step, json.dumps(answers, ensure_ascii=False), tg_id
         )
 
-
-async def transfer_onboarding_to_operator(tg_id: int) -> tuple[int | None, int]:
-    """
-    Прервать онбординг и передать оператору: создать lead с частичными ответами, тикет.
-    Возвращает (lead_id или None, ticket_id).
-    """
-    await get_or_create_user(tg_id)
-
-    pool = get_pool()
-    async with pool.acquire() as conn:
-        state = await conn.fetchrow(
-            "SELECT answers, current_step FROM onboarding_state WHERE tg_id = $1", tg_id
-        )
-        if not state:
-            ticket_id = await conn.fetchval(
-                "INSERT INTO tickets (client_user_id, status) VALUES ($1, 'OPEN') RETURNING ticket_id",
-                tg_id
-            )
-            return None, ticket_id
-
-        answers = state["answers"] or {}
-        if isinstance(answers, str):
-            answers = json.loads(answers) if answers else {}
-
-        lead_id = await conn.fetchval(
-            """INSERT INTO leads (tg_id, answers, status)
-               VALUES ($1, $2, 'NEW_LEAD') RETURNING lead_id""",
-            tg_id, json.dumps(answers, ensure_ascii=False)
-        )
-        await conn.execute(
-            "UPDATE users SET onboarding_completed_at = NOW(), client_type = $1 WHERE tg_id = $2",
-            ClientType.EXISTING.value, tg_id
-        )
-        await conn.execute("DELETE FROM onboarding_state WHERE tg_id = $1", tg_id)
-
-        ticket_id = await conn.fetchval(
-            "INSERT INTO tickets (client_user_id, status) VALUES ($1, 'OPEN') RETURNING ticket_id",
-            tg_id
-        )
-        return lead_id, ticket_id
-
-
-async def transfer_onboarding(tg_id: int) -> tuple[int, int, dict]:
-    """
-    Прервать онбординг: использовать существующий тикет (или создать), создать lead с частичными ответами.
-    Возвращает (ticket_id, lead_id, answers). Один клиент = один тикет, пока не закрыт.
-    """
-    ticket_id, _ = await get_or_create_active_ticket(tg_id)
-    pool = get_pool()
-    async with pool.acquire() as conn:
-        await get_or_create_user(tg_id)
-        state = await conn.fetchrow(
-            "SELECT answers FROM onboarding_state WHERE tg_id = $1", tg_id
-        )
-        answers = {}
-        if state:
-            raw = state["answers"] or {}
-            if isinstance(raw, str):
-                raw = json.loads(raw) if raw else {}
-            answers = raw
-        await conn.execute("DELETE FROM onboarding_state WHERE tg_id = $1", tg_id)
-
-        lead_id = await conn.fetchval(
-            """INSERT INTO leads (tg_id, answers, status)
-               VALUES ($1, $2, 'NEW_LEAD') RETURNING lead_id""",
-            tg_id, json.dumps(answers, ensure_ascii=False)
-        )
-    return ticket_id, lead_id, answers
-
-
 async def complete_onboarding(tg_id: int, answers: dict) -> int:
     """
     Завершить онбординг: обновить user, создать lead, очистить state.
     Возвращает lead_id.
     """
 
-
     pool = get_pool()
     async with pool.acquire() as conn:
         await get_or_create_user(tg_id)
         await conn.execute(
-            """UPDATE users SET onboarding_completed_at = NOW(), is_paid = $1
+            """UPDATE users SET onboarding_completed_at = NOW(), client_type = $1
                WHERE tg_id = $2""",
-            True, tg_id
+            ClientType.LEAD.value, tg_id
         )
         lead_id = await conn.fetchval(
             """INSERT INTO leads (tg_id, answers, status)
@@ -209,6 +156,18 @@ async def complete_onboarding(tg_id: int, answers: dict) -> int:
         await conn.execute("DELETE FROM onboarding_state WHERE tg_id = $1", tg_id)
         return lead_id
 
+async def mark_user_as_paid(tg_id: int) -> None:
+    pool = get_pool()
+    await pool.execute(
+        """
+        UPDATE users
+        SET is_paid = TRUE,
+            client_type = $1
+        WHERE tg_id = $2
+        """,
+        ClientType.EXISTING.value,
+        tg_id
+    )
 
 async def get_or_create_active_ticket(client_tg_id: int) -> tuple[int, bool]:
     """
@@ -271,6 +230,21 @@ async def set_ticket_thread_id(ticket_id: int, thread_id: int) -> None:
         "UPDATE tickets SET support_thread_id = $1 WHERE ticket_id = $2",
         thread_id, ticket_id
     )
+
+
+async def get_users_by_type(client_type: str) -> list[int]:
+    """
+    Возвращает список tg_id пользователей по client_type:
+    NEW, EXISTING, LEAD
+    """
+    pool = get_pool()
+
+    rows = await pool.fetch(
+        "SELECT tg_id FROM users WHERE client_type = $1",
+        client_type.upper()
+    )
+
+    return [row["tg_id"] for row in rows]
 
 
 async def set_ticket_card_message_id(ticket_id: int, message_id: int) -> None:
@@ -432,7 +406,7 @@ async def get_support_active_tickets(support_tg_id: int) -> list[dict]:
     )
     return [dict(r) for r in rows]
 
-async def set_user_client_type(tg_id: int, client_type: ClientType) -> None:
+async def set_client_type(tg_id: int, client_type: ClientType) -> None:
     """Обновить client_type пользователя: NEW → EXISTING."""
     # if isinstance(client_type, ClientType):
     #     raise ValueError("client_type должен быть объектом ClientType, а не строкой")
@@ -533,3 +507,13 @@ async def update_ticket_sla_stage(ticket_id: int, stage: int):
             SET sla_stage = $2
             WHERE ticket_id = $1
         """, ticket_id, stage)
+
+
+async def get_lead_by_client_tg_id(client_tg_id: int) -> dict | None:
+    pool = get_pool()
+    row = await pool.fetchrow(
+        "SELECT * FROM leads WHERE tg_id = $1",
+        client_tg_id
+    )
+
+    return dict(row) if row else None

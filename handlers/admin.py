@@ -5,7 +5,9 @@ from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
 from datetime import datetime, timedelta, timezone
 
-from services.db import get_avg_messages_before_reply, get_avg_first_reply_time, get_sla_violations, get_leads_count, get_user_role, get_all_users_with_start, set_role, get_tickets_by_status
+from constants import ADMIN_COMMANDS_HELP
+from services.db import get_avg_messages_before_reply, get_avg_first_reply_time, get_sla_violations, get_leads_count, \
+    get_user_role, get_all_users_with_start, set_role, get_tickets_by_status, get_users_by_type
 from keyboards import broadcast_confirm_kb
 from config import config
 
@@ -30,6 +32,11 @@ def start_of_day_local(dt: datetime):
 broadcast_content: dict[int, tuple[str, str, str | None]] = {}
 # Флаг ожидания контента
 broadcast_awaiting: set[int] = set()
+# Типы рассылки: all, new, existing, lead
+BROADCAST_TARGETS = ["all", "new", "existing", "lead"]
+# Словарь для хранения выбранного типа рассылки: {admin_tg_id: target_type}
+broadcast_targets: dict[int, str] = {}
+
 RATE_LIMIT = 25
 
 
@@ -37,32 +44,7 @@ def _is_admin(tg_id: int, role: str | None) -> bool:
     return role == "admin" or (config.admin_ids and tg_id in config.admin_ids)
 
 
-# Тексты для /help (команды админа с описанием)
-ADMIN_COMMANDS_HELP = """
-<b>Команды администратора</b>
 
-/start — Начать диалог с ботом
-/help — Показать этот список команд
-
-/broadcast — Массовая рассылка всем пользователям, сделавшим /start.
-  После команды отправьте текст или файл, затем подтвердите кнопкой.
-
-/set_role &lt;tg_id&gt; &lt;роль&gt; — Назначить роль пользователю.
-  Роли: client, support, admin.
-  Пример: /set_role 123456789 support
-
-/tickets open — Показать все открытые тикеты (статус OPEN).
-  Отображаются все новые обращения клиентов, ещё не взятые в работу.
-
-/tickets waiting — Показать все тикеты в работе (статус WAITING).
-  Отображаются тикеты, уже взятые операторами поддержки.
-  
-/stats_today — Статистика за сегодня.
-/stats_week — Статистика за последние 7 дней.
-/stats 01.02.2026 10.02.2026 - Статистика за период
-
-/cancel — Отменить текущую рассылку (если вы в процессе /broadcast).
-"""
 
 @router.message(F.chat.type == "private", F.text.startswith("/tickets"))
 async def cmd_tickets(message: Message):
@@ -115,8 +97,6 @@ async def cmd_tickets(message: Message):
 
     await message.answer("\n".join(lines))
 
-
-
 @router.message(F.chat.type == "private", F.text == "/help")
 async def cmd_help(message: Message):
     """Список команд: для админа — полный с описанием, для остальных — кратко."""
@@ -148,9 +128,22 @@ async def cmd_broadcast(message: Message):
         await message.answer("Доступ запрещён.")
         return
 
+    parts = message.text.split(maxsplit=1)
+    target_type = parts[1].lower() if len(parts) > 1 else "all"
+
+    if target_type not in BROADCAST_TARGETS:
+        await message.answer(
+            f"Неверный вариант. Выберите один из: {', '.join(BROADCAST_TARGETS)}\n"
+            "Пример: /broadcast all"
+        )
+        return
+
     broadcast_content.pop(tg_id, None)
     broadcast_awaiting.add(tg_id)
+    broadcast_targets[tg_id] = target_type
+
     await message.answer(
+        f"Выбран тип рассылки: {target_type.upper()}\n"
         "Отправьте текст или файл для рассылки.\n"
         "Для отмены отправьте /cancel"
     )
@@ -231,7 +224,14 @@ async def broadcast_cancel_cb(cb: CallbackQuery):
 async def _do_broadcast(bot, admin_tg_id: int, content: tuple):
     """Выполнить рассылку всем пользователям с /start. Сообщения не пишутся в тикеты."""
     content_type, text, file_id = content
-    user_ids = await get_all_users_with_start()
+
+    target_type = broadcast_targets.get(admin_tg_id, "all")
+
+    if target_type == "all":
+        user_ids = await get_all_users_with_start()
+    else:
+        user_ids = await get_users_by_type(target_type.upper())  # NEW, EXISTING, LEAD
+
 
     if not user_ids:
         await bot.send_message(
