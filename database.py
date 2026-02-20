@@ -88,6 +88,15 @@ class Database:
                 await conn.execute(
                     "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS sla_stage SMALLINT DEFAULT 0"
                 )
+                await conn.execute("""
+                    ALTER TABLE users
+                    ADD COLUMN IF NOT EXISTS first_message_at TIMESTAMPTZ,
+                    ADD COLUMN IF NOT EXISTS reminder_step INTEGER DEFAULT 0
+                """)
+                await conn.execute("""
+                    ALTER TABLE tickets
+                    ADD COLUMN sla_started_at TIMESTAMP WITH TIME ZONE NULL;
+                """)
             except Exception:
                 pass
             await conn.execute("""

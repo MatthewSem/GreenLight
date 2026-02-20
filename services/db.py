@@ -416,6 +416,26 @@ async def set_client_type(tg_id: int, client_type: ClientType) -> None:
         client_type.value, tg_id
     )
 
+
+async def upsert_user_with_client_type(
+    tg_id: int,
+    username: str | None,
+    client_type: ClientType
+) -> None:
+    pool = get_pool()
+
+    await pool.execute("""
+        INSERT INTO users (tg_id, username, client_type)
+        VALUES ($1, $2, $3)
+        ON CONFLICT (tg_id)
+        DO UPDATE SET
+            client_type = EXCLUDED.client_type,
+            username = COALESCE(EXCLUDED.username, users.username)
+    """, tg_id, username, client_type.value)
+
+
+
+
 async def get_leads_count(date_from: datetime, date_to: datetime):
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -483,7 +503,7 @@ async def get_avg_messages_before_reply(date_from, date_to) -> Optional[float]:
 
 async def get_tickets_for_sla_check():
     """
-    Получить тикеты, которые ещё не получили первый ответ (для SLA проверки).
+    Получить тикеты, для которых запущен SLA и нет первого ответа.
     """
     pool = get_pool()
     async with pool.acquire() as conn:
@@ -492,8 +512,19 @@ async def get_tickets_for_sla_check():
             FROM tickets
             WHERE first_reply_at IS NULL
               AND status IN ('OPEN', 'WAITING')
+              AND sla_started_at IS NOT NULL
         """)
     return [dict(r) for r in rows]
+
+
+async def start_ticket_sla(ticket_id: int):
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute("""
+            UPDATE tickets
+            SET sla_started_at = NOW()
+            WHERE ticket_id = $1
+        """, ticket_id)
 
 
 async def update_ticket_sla_stage(ticket_id: int, stage: int):
@@ -517,3 +548,25 @@ async def get_lead_by_client_tg_id(client_tg_id: int) -> dict | None:
     )
 
     return dict(row) if row else None
+
+async def mark_user_active(tg_id: int):
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute("""
+            UPDATE users
+            SET first_message_at = COALESCE(first_message_at, NOW())
+            WHERE tg_id = $1
+        """, tg_id)
+
+async def restart_ticket_sla(ticket_id: int):
+    """
+    Перезапускает SLA (когда клиент пишет новое сообщение).
+    """
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute("""
+            UPDATE tickets
+            SET sla_started_at = NOW(),
+                first_reply_at = NULL
+            WHERE ticket_id = $1
+        """, ticket_id)

@@ -3,6 +3,7 @@ import json
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery, ContentType
 from aiogram.filters import CommandStart
+from aiogram.filters.command import CommandObject
 
 from constants import (
     ClientType,
@@ -22,7 +23,8 @@ from services.db import (
     get_or_create_active_ticket,
     add_message,
     get_ticket,
-    set_ticket_card_message_id, start_onboarding, set_client_type,
+    set_ticket_card_message_id, start_onboarding, set_client_type, upsert_user_with_client_type, mark_user_active,
+    start_ticket_sla,
 )
 from config import config
 from services.working_hours import is_working_hours
@@ -56,11 +58,11 @@ def _get_client_label(client_type: ClientType) -> str:
     return "🆕 Новый"
 
 @router.message(CommandStart(), F.chat.type == "private")
-async def cmd_start(message: Message):
+async def cmd_start(message: Message, command=None):
     """Только приветствие. Тикет и онбординг — после первого ответа клиента на вопрос «Какой у вас вопрос?»."""
     tg_id = message.from_user.id
     username = message.from_user.username
-    # payload = message.get_args()
+    payload = getattr(command, "args", None)
 
     from services.db import get_user_role
     role = await get_user_role(tg_id, config.admin_ids or [])
@@ -72,12 +74,27 @@ async def cmd_start(message: Message):
         )
         return
 
-    # if payload == "existing":
-    #     await set_client_type(tg_id, ClientType.EXISTING)
-    #     await message.answer("Вы зарегистрированы как действующий клиент 👤")
-    #     return
+    if payload == "existing":
+        try:
+            member = await message.bot.get_chat_member(chat_id=config.private_chat_id, user_id=tg_id)
+            print(member)
+            if member.status in ("member", "creator", "administrator"):
+                await upsert_user_with_client_type(tg_id, username, ClientType.EXISTING)
+                await message.answer(
+                    "🎉 Добро пожаловать!\nВы зарегистрированы как действующий клиент."
+                )
+            else:
+                await get_or_create_user(tg_id, username, admin_ids=config.admin_ids or [])
+                await message.answer("Вы не состоите в нашем закрытом чате. Статус EXISTING не присвоен.")
+        except Exception:
+            await get_or_create_user(tg_id, username, admin_ids=config.admin_ids or [])
+            await message.answer("Ошибка при проверке группы. Вы зарегистрированы как обычный пользователь.")
 
-    await get_or_create_user(tg_id, username, admin_ids=config.admin_ids or [])
+    else:
+        # Обычный /start без payload
+        await get_or_create_user(tg_id, username, admin_ids=config.admin_ids or [])
+
+        # Сообщение в любом случае
     await message.answer(MSG_START)
 
 @router.message(
@@ -90,6 +107,7 @@ async def client_message(message: Message):
 
     user, client_type, is_paid = await get_or_create_user(tg_id, username)
 
+    await mark_user_active(tg_id)
     text = message.text or message.caption or ""
     media_type, file_id = _get_media_info(message)
     last_msg = text or "(медиа)"
@@ -168,6 +186,10 @@ async def client_message(message: Message):
             )
 
             if card_msg_id:
+
+                await set_ticket_card_message_id(ticket_id, card_msg_id)
+                await start_ticket_sla(ticket_id)
+
                 await update_ticket_card(
                     message.bot,
                     ticket_id,
@@ -203,6 +225,10 @@ async def client_message(message: Message):
 
         if card_msg_id:
             await set_ticket_card_message_id(ticket_id, card_msg_id)
+
+            # Запуск SLA
+            await start_ticket_sla(ticket_id)
+
     else:
         ticket = await get_ticket(ticket_id)
 

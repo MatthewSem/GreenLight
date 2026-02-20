@@ -14,6 +14,7 @@ class Config:
     bot_token: str = ""
     support_group_id: int = 0
     admin_chat_id: int = 0
+    private_chat_id: int = 0
 
     # Database
     database_url: str = ""
@@ -48,6 +49,7 @@ class Config:
             bot_token=os.getenv("BOT_TOKEN", ""),
             support_group_id=int(os.getenv("SUPPORT_GROUP_ID", "0")),
             admin_chat_id=int(os.getenv("ADMIN_CHAT_ID", "0")),
+            private_chat_id=int(os.getenv("PRIVATE_GROUP_ID", "0")),
             database_url=os.getenv(
                 "DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/greenlight"
             ),

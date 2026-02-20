@@ -12,6 +12,7 @@ from database import Database
 from handlers import client, support, admin
 
 from services.auto_escalation import escalation_watcher
+from services.reminders import reminder_worker
 
 logging.basicConfig(
     level=logging.INFO,
@@ -38,11 +39,14 @@ async def main():
     dp.include_router(client.router)   # клиенты
 
     asyncio.create_task(escalation_watcher(bot))
+    asyncio.create_task(reminder_worker(bot))
+
     # Команды бота (видны при вводе / в поле сообщения)
     await bot.set_my_commands([
         BotCommand(command="start", description="Начать диалог / поддержка"),
         BotCommand(command="help", description="Список команд с описанием"),
     ])
+
 
     logger.info("Бот запущен")
     try:

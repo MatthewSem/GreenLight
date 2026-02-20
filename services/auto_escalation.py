@@ -27,7 +27,9 @@ async def escalation_watcher(bot):
             now = datetime.now(UTC)
 
             for t in tickets:
-                created = t["created_at"]
+                created = t["sla_started_at"]
+                if not created:
+                    continue
                 minutes_passed = (now - created).total_seconds() / 60
                 stage = t["sla_stage"] or 0
 
