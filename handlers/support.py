@@ -158,12 +158,14 @@ async def ticket_callback(cb: CallbackQuery):
             )
             return
         pending_replies[cb.from_user.id] = ticket_id
+        print(pending_replies)
         await cb.answer("Режим ответа включён — все сообщения в этой теме пойдут клиенту. Нажмите другую кнопку, чтобы выйти.")
         await cb.message.answer(MSG_REPLY_PROMPT)
         return
 
     # Любая другая кнопка — выходим из режима ответа
     pending_replies.pop(cb.from_user.id, None)
+    print(pending_replies)
 
     if action == "escalate":
         if status == "CLOSED":
@@ -444,7 +446,10 @@ async def support_reply_message(message: Message):
     Писать клиенту можно только когда тикет в статусе WAITING (взят оператором); при OPEN — нельзя.
     """
     tg_id = message.from_user.id
+    print(tg_id)
+    print(pending_replies)
     ticket_id = pending_replies.get(tg_id)
+    print("jndfk", ticket_id)
     if not ticket_id:
         return
 
@@ -471,6 +476,7 @@ async def support_reply_message(message: Message):
         await message.bot.send_message(config.support_group_id, **err_kw("Тикет закрыт. Ответы клиенту недоступны."))
         return
 
+    print("дошел")
     # Пока тикет OPEN — никто не может писать клиенту (тикет ещё не взят)
     if ticket.get("status") == "OPEN":
         await message.bot.send_message(
@@ -490,6 +496,7 @@ async def support_reply_message(message: Message):
     client_tg_id = ticket["client_user_id"]
     text = message.text or message.caption or ""
 
+    print(client_tg_id)
     media_type = None
     media_file_id = None
     if message.photo:

@@ -75,21 +75,10 @@ async def cmd_start(message: Message, command=None):
         return
 
     if payload == "existing":
-        try:
-            member = await message.bot.get_chat_member(chat_id=config.private_chat_id, user_id=tg_id)
-            print(member)
-            if member.status in ("member", "creator", "administrator"):
-                await upsert_user_with_client_type(tg_id, username, ClientType.EXISTING)
-                await message.answer(
-                    "🎉 Добро пожаловать!\nВы зарегистрированы как действующий клиент."
-                )
-            else:
-                await get_or_create_user(tg_id, username, admin_ids=config.admin_ids or [])
-                await message.answer("Вы не состоите в нашем закрытом чате. Статус EXISTING не присвоен.")
-        except Exception:
-            await get_or_create_user(tg_id, username, admin_ids=config.admin_ids or [])
-            await message.answer("Ошибка при проверке группы. Вы зарегистрированы как обычный пользователь.")
-
+        await upsert_user_with_client_type(tg_id, username, ClientType.EXISTING)
+        await message.answer(
+            "🎉 Добро пожаловать!\nВы зарегистрированы как действующий клиент."
+        )
     else:
         # Обычный /start без payload
         await get_or_create_user(tg_id, username, admin_ids=config.admin_ids or [])
