@@ -328,6 +328,16 @@ async def get_ticket_messages(ticket_id: int, limit: int = 30) -> list[dict]:
     )
     return [dict(r) for r in reversed(rows)]
 
+async def get_history_messages_full() -> list[dict]:
+    """Все сообщения тикета с самого начала (без LIMIT)."""
+    pool = get_pool()
+    rows = await pool.fetch(
+        """SELECT m.*, u.username
+           FROM messages m
+           LEFT JOIN users u ON u.tg_id = m.author_user_id
+           ORDER BY m.created_at ASC""",
+    )
+    return [dict(r) for r in rows]
 
 async def get_client_username(tg_id: int) -> str | None:
     """Получить username клиента."""
@@ -342,6 +352,13 @@ async def get_all_users_with_start() -> list[int]:
     rows = await pool.fetch("SELECT tg_id FROM users")
     return [r["tg_id"] for r in rows]
 
+async def get_all_supports() -> list[dict]:
+    """
+    Возвращает список всех саппортов с tg_id и username
+    """
+    pool = await get_pool()
+    rows = await pool.fetch("SELECT tg_id, username FROM users WHERE role = 'support'")
+    return [{"tg_id": r["tg_id"], "username": r["username"]} for r in rows]
 
 async def set_role(tg_id: int, role: str) -> None:
     """Установить роль (admin только). Создаёт пользователя, если нет."""
@@ -351,6 +368,54 @@ async def set_role(tg_id: int, role: str) -> None:
            ON CONFLICT (tg_id) DO UPDATE SET role = EXCLUDED.role""",
         tg_id, role
     )
+
+# ----------------------
+# Получить tg_id пользователя по username (только support/admin)
+# ----------------------
+async def get_user_id_by_username(username: str) -> int | None:
+    pool = get_pool()
+    row = await pool.fetchrow(
+        """
+        SELECT tg_id
+        FROM users
+        WHERE username = $1
+          AND role IN ('support', 'admin')
+        LIMIT 1
+        """,
+        username,
+    )
+    return row["tg_id"] if row else None
+
+# ----------------------
+# Получить все открытые тикеты саппорта
+# ----------------------
+async def get_open_tickets_by_support(support_id: int) -> list[dict]:
+    pool = get_pool()
+    rows = await pool.fetch(
+        """
+        SELECT *
+        FROM tickets
+        WHERE assigned_to_support_id = $1
+          AND status != 'CLOSED'
+        """,
+        support_id,
+    )
+    return [dict(r) for r in rows]
+
+# ----------------------
+# Передать тикет другому саппорту
+# ----------------------
+async def transfer_ticket(ticket_id: int, new_support_id: int) -> None:
+    pool = get_pool()
+    await pool.execute(
+        """
+        UPDATE tickets
+        SET assigned_to_support_id = $1
+        WHERE ticket_id = $2
+        """,
+        new_support_id, ticket_id,
+    )
+
 
 async def get_active_ticket_by_client(tg_id: int) -> Optional[dict]:
     """Активный тикет клиента."""
@@ -436,53 +501,78 @@ async def upsert_user_with_client_type(
 
 
 
-async def get_leads_count(date_from: datetime, date_to: datetime):
+# =====================================
+# Количество лидов
+# =====================================
+async def get_leads_count(date_from: datetime, date_to: datetime, tg_id: Optional[int] = None) -> int:
     pool = await get_pool()
     async with pool.acquire() as conn:
-        row = await conn.fetchrow("""
-            SELECT COUNT(*) AS total
-            FROM tickets
-            WHERE created_at BETWEEN $1 AND $2
-        """, date_from, date_to)
+        sql = "SELECT COUNT(*) AS total FROM tickets WHERE created_at BETWEEN $1 AND $2"
+        params = [date_from, date_to]
+
+        if tg_id:
+            sql += " AND assigned_to_support_id = $3"
+            params.append(tg_id)
+
+        row = await conn.fetchrow(sql, *params)
 
     return row["total"] if row else 0
 
-async def get_avg_first_reply_time(date_from, date_to):
+# =====================================
+# Среднее время первого ответа
+# =====================================
+async def get_avg_first_reply_time(date_from: datetime, date_to: datetime, tg_id: Optional[int] = None) -> Optional[int]:
     pool = await get_pool()
     async with pool.acquire() as conn:
-        row = await conn.fetchrow("""
+        sql = """
             SELECT AVG(EXTRACT(EPOCH FROM (first_reply_at - created_at))) AS avg_seconds
             FROM tickets
             WHERE first_reply_at IS NOT NULL
               AND created_at BETWEEN $1 AND $2
-        """, date_from, date_to)
+        """
+        params = [date_from, date_to]
+
+        if tg_id:
+            sql += " AND assigned_to_support_id = $3"
+            params.append(tg_id)
+
+        row = await conn.fetchrow(sql, *params)
 
     if not row or not row["avg_seconds"]:
         return None
-
     return int(row["avg_seconds"])
 
-async def get_sla_violations(date_from, date_to):
+# =====================================
+# Нарушения SLA
+# =====================================
+async def get_sla_violations(date_from: datetime, date_to: datetime, tg_id: Optional[int] = None) -> int:
     pool = await get_pool()
     async with pool.acquire() as conn:
-        row = await conn.fetchrow("""
+        sql = """
             SELECT COUNT(*) AS violations
             FROM tickets
             WHERE first_reply_at IS NOT NULL
               AND created_at BETWEEN $1 AND $2
               AND (first_reply_at - created_at) > ($3 || ' minutes')::interval
-        """, date_from, date_to, str(config.sla_minutes))
+        """
+        params = [date_from, date_to, str(config.sla_minutes)]
+
+        if tg_id:
+            sql += " AND assigned_to_support_id = $4"
+            params.append(tg_id)
+
+        row = await conn.fetchrow(sql, *params)
 
     return row["violations"] if row else 0
 
-async def get_avg_messages_before_reply(date_from, date_to) -> Optional[float]:
-    """
-    Среднее количество сообщений от клиента (IN) до первого ответа саппорта (OUT)
-    для тикетов, созданных между date_from и date_to.
-    """
-    pool = get_pool()
+
+# =====================================
+# Среднее количество сообщений до ответа
+# =====================================
+async def get_avg_messages_before_reply(date_from: datetime, date_to: datetime, tg_id: Optional[int] = None) -> Optional[float]:
+    pool = await get_pool()
     async with pool.acquire() as conn:
-        row = await conn.fetchrow("""
+        sql = """
             SELECT AVG(msg_count)::numeric(10,2) AS avg_messages
             FROM (
                 SELECT t.ticket_id,
@@ -494,9 +584,15 @@ async def get_avg_messages_before_reply(date_from, date_to) -> Optional[float]:
                    AND m.created_at <= t.first_reply_at
                 WHERE t.first_reply_at IS NOT NULL
                   AND t.created_at BETWEEN $1 AND $2
-                GROUP BY t.ticket_id
-            ) sub
-        """, date_from, date_to)
+        """
+        params = [date_from, date_to]
+
+        if tg_id:
+            sql += " AND t.assigned_to_support_id = $3"
+            params.append(tg_id)
+
+        sql += " GROUP BY t.ticket_id) sub"
+        row = await conn.fetchrow(sql, *params)
 
     return float(row["avg_messages"]) if row and row["avg_messages"] else None
 

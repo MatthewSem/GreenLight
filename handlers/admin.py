@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 
 from constants import ADMIN_COMMANDS_HELP
 from services.db import get_avg_messages_before_reply, get_avg_first_reply_time, get_sla_violations, get_leads_count, \
-    get_user_role, get_all_users_with_start, set_role, get_tickets_by_status, get_users_by_type
+    get_user_role, get_all_users_with_start, set_role, get_tickets_by_status, get_users_by_type, get_all_supports
 from keyboards import broadcast_confirm_kb
 from config import config
 
@@ -42,9 +42,6 @@ RATE_LIMIT = 25
 
 def _is_admin(tg_id: int, role: str | None) -> bool:
     return role == "admin" or (config.admin_ids and tg_id in config.admin_ids)
-
-
-
 
 @router.message(F.chat.type == "private", F.text.startswith("/tickets"))
 async def cmd_tickets(message: Message):
@@ -107,9 +104,14 @@ async def cmd_help(message: Message):
         await message.answer(ADMIN_COMMANDS_HELP)
     elif role == "support":
         await message.answer(
-            "Доступные команды:\n"
-            "/start — Начать диалог с поддержкой\n"
-            "/my_tickets - Просмотреть активные тикеты"
+            """Доступные команды:
+/start — Начать диалог с поддержкой
+            
+/my_tickets - Просмотреть активные тикеты
+/transfer_tickets user_name - Передать все свои тикеты другому  
+            
+/statistik - Статистика.
+/stats 01.02.2026 10.02.2026 — Статистика за период\n"""
         )
     else:
         await message.answer(
@@ -300,96 +302,3 @@ async def cmd_set_role(message: Message):
 
     await set_role(target_tg_id, new_role)
     await message.answer(f"Роль для {target_tg_id} установлена: {new_role}")
-
-
-@router.message(F.chat.type == "private", F.text == "/stats_today")
-async def cmd_stats_today(message: Message):
-    tg_id = message.from_user.id
-    role = await get_user_role(tg_id, config.admin_ids or [])
-
-    if not _is_admin(tg_id, role):
-        await message.answer("⛔ Только для администратора.")
-        return
-
-    now = now_local()
-    today_start = start_of_day_local(now)
-
-    text = await _build_stats_text(today_start, now)
-    await message.answer(text)
-
-@router.message(F.chat.type == "private", F.text == "/stats_week")
-async def cmd_stats_week(message: Message):
-    tg_id = message.from_user.id
-    role = await get_user_role(tg_id, config.admin_ids or [])
-
-    if not _is_admin(tg_id, role):
-        await message.answer("⛔ Только для администратора.")
-        return
-
-    now = now_local()
-    week_ago = now - timedelta(days=7)
-
-    text = await _build_stats_text(week_ago, now)
-    await message.answer(text)
-
-async def _build_stats_text(date_from, date_to):
-    avg_seconds = await get_avg_first_reply_time(date_from, date_to)
-    avg_msg = await get_avg_messages_before_reply(date_from, date_to)
-    violations = await get_sla_violations(date_from, date_to)
-    leads = await get_leads_count(date_from, date_to)
-
-    if avg_seconds:
-        minutes = avg_seconds // 60
-        seconds = avg_seconds % 60
-        avg_time_text = f"{minutes}м {seconds}с"
-    else:
-        avg_time_text = "—"
-
-    if avg_msg:
-        minutes = avg_msg // 60
-        seconds = avg_msg % 60
-        avg_msg_text = f"{minutes}м {seconds}с"
-    else:
-        avg_msg_text = "—"
-
-    return f"""
-📊 <b>Статистика</b>
-
-Лиды: {leads}
-Среднее время ответа: {avg_time_text}
-Среднее время (сообщения) ответа: {avg_msg_text}
-Нарушения SLA (>{config.sla_minutes} мин): {violations}
-"""
-
-
-@router.message(F.chat.type == "private", F.text.startswith("/stats "))
-async def cmd_stats_period(message: Message):
-    tg_id = message.from_user.id
-    role = await get_user_role(tg_id, config.admin_ids or [])
-
-    if not _is_admin(tg_id, role):
-        await message.answer("⛔ Только для администратора.")
-        return
-
-    parts = message.text.split()
-
-    if len(parts) != 3:
-        await message.answer(
-            "Использование:\n"
-            "/stats 01.02.2026 10.02.2026"
-        )
-        return
-
-    try:
-        date_from = datetime.strptime(parts[1], "%d.%m.%Y").replace(tzinfo=TZ)
-        date_to = datetime.strptime(parts[2], "%d.%m.%Y").replace(tzinfo=TZ) + timedelta(days=1)
-    except ValueError:
-        await message.answer("Неверный формат даты. Используйте DD.MM.YYYY")
-        return
-
-    if date_from >= date_to:
-        await message.answer("Дата начала должна быть раньше даты окончания.")
-        return
-
-    text = await _build_stats_text(date_from, date_to)
-    await message.answer(text)

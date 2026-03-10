@@ -1,6 +1,8 @@
 """Клавиатуры бота."""
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
 
+from constants import QUICK_REPLIES
+
 
 # --- Тикет (Support Group) ---
 def ticket_kb(
@@ -29,6 +31,7 @@ def ticket_kb(
         ],
         [InlineKeyboardButton(text="📋 Просмотреть онбординг",callback_data=f"view_onboarding:{ticket_id}")],
         [InlineKeyboardButton(text="💰 Оплатил", callback_data=f"ticket:paid:{ticket_id}")],
+        [InlineKeyboardButton(text="⚡ Скрипты", callback_data=f"ticket:quick_menu:{ticket_id}")],
         [InlineKeyboardButton(text="⛔ Эскалация", callback_data=f"ticket:escalate:{ticket_id}")],
     ])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
@@ -50,3 +53,19 @@ def broadcast_confirm_kb() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="✅ Подтвердить", callback_data="broadcast:confirm")],
         [InlineKeyboardButton(text="❌ Отмена", callback_data="broadcast:cancel")],
     ])
+
+
+def ticket_quick_replies_kb(ticket_id: int) -> InlineKeyboardMarkup:
+    """Клавиатура с быстрыми ответами для тикета."""
+    rows: list[list[InlineKeyboardButton]] = []
+    for key, label, _ in QUICK_REPLIES:
+        button_label = label if len(label) <= 32 else label[:29] + "..."
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=button_label,
+                    callback_data=f"ticket:quick_{key}:{ticket_id}",
+                )
+            ]
+        )
+    return InlineKeyboardMarkup(inline_keyboard=rows)
