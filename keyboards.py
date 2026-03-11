@@ -69,3 +69,22 @@ def ticket_quick_replies_kb(ticket_id: int) -> InlineKeyboardMarkup:
             ]
         )
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def main_keyboard(role: str) -> ReplyKeyboardMarkup:
+    # keyboard — список рядов кнопок, каждый ряд — список кнопок
+    keyboard = []
+
+    # Кнопка для всех пользователей
+    keyboard.append([KeyboardButton(text="📎 Реферальная ссылка")])
+
+    # Дополнительная кнопка для админов и саппортов
+    if role in ("admin", "support"):
+        keyboard.append([KeyboardButton(text="📌 Создать ссылку для клиента")])
+
+    # Формируем клавиатуру
+    kb = ReplyKeyboardMarkup(
+        keyboard=keyboard,
+        resize_keyboard=True
+    )
+    return kb

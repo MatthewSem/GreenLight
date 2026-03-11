@@ -10,7 +10,8 @@ from aiogram.types import BotCommand
 from config import config
 from database import Database
 from handlers import client, support, admin
-from handlers.command import statistik
+from handlers.command import statistik, referals
+from middlewares.menu_middleware import MenuMiddleware
 
 from services.auto_escalation import escalation_watcher
 from services.reminders import reminder_worker
@@ -20,7 +21,6 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
-
 
 async def main():
     """Запуск бота."""
@@ -36,9 +36,12 @@ async def main():
     dp = Dispatcher()
 
     dp.include_router(statistik.router)
+    dp.include_router(referals.router)
     dp.include_router(admin.router)   # admin первым — broadcast, set_role
     dp.include_router(support.router)  # support group
     dp.include_router(client.router)   # клиенты
+
+    dp.message.middleware(MenuMiddleware())
 
     asyncio.create_task(escalation_watcher(bot))
     asyncio.create_task(reminder_worker(bot))

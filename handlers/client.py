@@ -1,9 +1,8 @@
 """Обработчики для клиентов."""
 import json
 from aiogram import Router, F
-from aiogram.types import Message, CallbackQuery, ContentType
+from aiogram.types import Message
 from aiogram.filters import CommandStart
-from aiogram.filters.command import CommandObject
 
 from constants import (
     ClientType,
@@ -15,6 +14,7 @@ from constants import (
     ONBOARDING_QUESTIONS,
     MSG_START_SUPPORT_ADMIN,
 )
+from keyboards import main_keyboard
 from services.db import (
     get_or_create_user,
     get_onboarding_state,
@@ -24,7 +24,7 @@ from services.db import (
     add_message,
     get_ticket,
     set_ticket_card_message_id, start_onboarding, set_client_type, upsert_user_with_client_type, mark_user_active,
-    start_ticket_sla,
+    start_ticket_sla, get_referral_by_code, create_referral_usage,
 )
 from config import config
 from services.working_hours import is_working_hours
@@ -68,11 +68,28 @@ async def cmd_start(message: Message, command=None):
     role = await get_user_role(tg_id, config.admin_ids or [])
 
     if role in ("support", "admin"):
-        await message.answer(MSG_START_SUPPORT_ADMIN)
+        await message.answer(MSG_START_SUPPORT_ADMIN, reply_markup=main_keyboard(role))
         await message.answer(
             "Вы вошли как оператор/администратор. Управление тикетами — в группе поддержки."
         )
         return
+
+    # Проверяем реферальный код
+    referral = None
+    if payload:
+        referral = await get_referral_by_code(payload)  # Функция ищет по коду в таблице referrals
+
+    # Создаём пользователя
+    await get_or_create_user(tg_id, username, admin_ids=config.admin_ids or [])
+
+    # Если был переход по реферальной ссылке и пользователь зарегистрирован впервые
+    if referral:
+        await create_referral_usage(
+            referral_id=referral['referral_id'],
+            visitor_client_id=tg_id,
+            converted=True  # пользователь зарегистрировался
+        )
+        await message.answer(f"🎉 Вы пришли по реферальной ссылке @{referral['owner_username']}!")
 
     if payload == "existing":
         await upsert_user_with_client_type(tg_id, username, ClientType.EXISTING)
@@ -84,7 +101,7 @@ async def cmd_start(message: Message, command=None):
         await get_or_create_user(tg_id, username, admin_ids=config.admin_ids or [])
 
         # Сообщение в любом случае
-    await message.answer(MSG_START)
+    await message.answer(MSG_START, reply_markup=main_keyboard(role))
 
 @router.message(
     F.chat.type == "private",

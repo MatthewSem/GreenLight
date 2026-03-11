@@ -35,6 +35,8 @@ class Config:
     work_end_hour: int = 22
     sla_minutes: int = 30
 
+    bot_username: str = "GreenLight_Partner_bot"
+
     # SLA
     sla_warning_minutes: int = 15
     sla_admin_minutes: int = 30
@@ -54,6 +56,7 @@ class Config:
                 "DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/greenlight"
             ),
             crm_webhook_url=os.getenv("CRM_WEBHOOK_URL", ""),
+            bot_username=os.getenv("BOT_USERNAME", "GreenLinghtTest_bot"),
             crm_enabled=os.getenv("CRM_ENABLED", "false").lower() == "true",
             google_sheets_enabled=os.getenv("GOOGLE_SHEETS_ENABLED", "false").lower() == "true",
             google_credentials_file=os.getenv("GOOGLE_CREDENTIALS_FILE", ""),
