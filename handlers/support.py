@@ -321,7 +321,7 @@ async def ticket_callback(cb: CallbackQuery):
             )
             return
 
-        messages = await get_history_messages_full()
+        messages = await get_history_messages_full(ticket["client_user_id"])
         if not messages:
             await cb.answer("История пуста")
             return

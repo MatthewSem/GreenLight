@@ -328,15 +328,23 @@ async def get_ticket_messages(ticket_id: int, limit: int = 30) -> list[dict]:
     )
     return [dict(r) for r in reversed(rows)]
 
-async def get_history_messages_full() -> list[dict]:
-    """Все сообщения тикета с самого начала (без LIMIT)."""
+async def get_history_messages_full(client_tg_id: int) -> list[dict]:
     pool = get_pool()
-    rows = await pool.fetch(
-        """SELECT m.*, u.username
-           FROM messages m
-           LEFT JOIN users u ON u.tg_id = m.author_user_id
-           ORDER BY m.created_at ASC""",
-    )
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT
+                m.*,
+                t.ticket_id,
+                u.username
+            FROM messages m
+            JOIN tickets t ON t.ticket_id = m.ticket_id
+            LEFT JOIN users u ON u.tg_id = m.author_user_id
+            WHERE t.client_user_id = $1
+            ORDER BY m.created_at ASC
+            """,
+            client_tg_id
+        )
     return [dict(r) for r in rows]
 
 async def get_client_username(tg_id: int) -> str | None:
