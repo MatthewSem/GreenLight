@@ -2,27 +2,20 @@
 import logging
 from datetime import datetime
 
+from services.db.sla import stop_ticket_sla
+from services.db.tickets import get_support_active_tickets, get_ticket, get_client_username, get_ticket_messages, \
+    take_ticket, update_ticket_status, set_ticket_thread_id, set_ticket_topic_card_message_id, \
+    get_history_messages_full, add_message, set_first_reply_if_needed, get_lead_by_client_tg_id, \
+    get_user_id_by_username, get_open_tickets_by_support, transfer_ticket
+from services.db.users import get_user_role, get_user_client_type, mark_user_as_paid
+
 logger = logging.getLogger(__name__)
 from aiogram import Router, F
 from io import BytesIO
 from aiogram.types import CallbackQuery, Message, BufferedInputFile, InputMediaPhoto, InputMediaDocument, InputMediaAudio, InputMediaVideo
 from aiogram.filters import Command
 from constants import MSG_REPLY_PROMPT, ClientType, QUICK_REPLIES_MAP
-from services.db import (
-    get_user_role,
-    get_ticket,
-    take_ticket,
-    add_message,
-    set_first_reply_if_needed,
-    get_ticket_messages,
-    update_ticket_status,
-    get_client_username,
-    get_user_client_type,
-    set_ticket_thread_id,
-    set_ticket_topic_card_message_id,
-    get_support_active_tickets, get_onboarding_state, get_lead_by_client_tg_id, mark_user_as_paid,
-    get_history_messages_full, get_user_id_by_username, get_open_tickets_by_support, transfer_ticket,
-)
+
 from services.support_chat import (
     send_escalation_to_admin,
     send_ticket_to_support_group,
@@ -518,7 +511,9 @@ async def ticket_callback(cb: CallbackQuery):
             media_type=None,
             media_file_id=None,
         )
+        await stop_ticket_sla(ticket_id)
         await set_first_reply_if_needed(ticket_id)
+
 
         thread_id = ticket.get("support_thread_id")
         confirm_kw = {"text": "✅ Быстрый ответ отправлен клиенту"}
@@ -654,6 +649,7 @@ async def support_reply_message(message: Message):
         media_type=media_type,
         media_file_id=media_file_id,
     )
+    await stop_ticket_sla(ticket_id)
     await set_first_reply_if_needed(ticket_id)
 
     thread_id = getattr(message, "message_thread_id", None)

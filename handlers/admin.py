@@ -6,13 +6,13 @@ from aiogram.types import Message, CallbackQuery
 from datetime import datetime, timedelta, timezone
 
 from constants import ADMIN_COMMANDS_HELP
-from services.db import get_avg_messages_before_reply, get_avg_first_reply_time, get_sla_violations, get_leads_count, \
-    get_user_role, get_all_users_with_start, set_role, get_tickets_by_status, get_users_by_type, get_all_supports
 from keyboards import broadcast_confirm_kb
 from config import config
 
 from zoneinfo import ZoneInfo
 
+from services.db.tickets import get_tickets_by_status, get_all_users_with_start, set_role
+from services.db.users import get_user_role, get_users_by_type
 
 logger = logging.getLogger(__name__)
 router = Router(name="admin")

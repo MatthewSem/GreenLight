@@ -7,8 +7,10 @@ from aiogram.exceptions import TelegramBadRequest, TelegramAPIError
 
 from config import config
 from keyboards import ticket_kb, ticket_status_kb
-from services.db import get_ticket, get_ticket_messages, get_client_username, get_user_client_type
+
 from constants import MSG_REPLY_PROMPT
+from services.db.tickets import get_ticket, get_client_username, get_ticket_messages
+from services.db.users import get_user_client_type
 
 logger = logging.getLogger(__name__)
 

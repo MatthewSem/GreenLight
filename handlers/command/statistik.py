@@ -3,7 +3,10 @@ from aiogram.types import Message
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from config import config
-from services.db import get_avg_messages_before_reply, get_avg_first_reply_time, get_sla_violations, get_leads_count, get_user_role, get_all_supports
+from services.db.statistik import get_avg_first_reply_time, get_avg_messages_before_reply, get_sla_violations, \
+    get_leads_count
+from services.db.tickets import get_all_supports
+from services.db.users import get_user_role
 
 router = Router(name="statistik")
 TZ = ZoneInfo(config.timezone)

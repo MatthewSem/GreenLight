@@ -15,18 +15,13 @@ from constants import (
     ONBOARDING_QUESTIONS,
     MSG_START_SUPPORT_ADMIN,
 )
-from services.db import (
-    get_or_create_user,
-    get_onboarding_state,
-    save_onboarding_answer,
-    complete_onboarding,
-    get_or_create_active_ticket,
-    add_message,
-    get_ticket,
-    set_ticket_card_message_id, start_onboarding, set_client_type, upsert_user_with_client_type, mark_user_active,
-    start_ticket_sla,
-)
+
 from config import config
+from services.db.onboarding import get_onboarding_state, start_onboarding, save_onboarding_answer, complete_onboarding
+from services.db.sla import start_ticket_sla
+from services.db.tickets import upsert_user_with_client_type, mark_user_active, add_message, \
+    get_or_create_active_ticket, get_ticket, activate_ticket, set_client_type, set_ticket_card_message_id
+from services.db.users import get_user_role, get_or_create_user
 from services.working_hours import is_working_hours
 from services.crm import send_lead_to_crm
 from services.support_chat import (
@@ -64,7 +59,7 @@ async def cmd_start(message: Message, command=None):
     username = message.from_user.username
     payload = getattr(command, "args", None)
 
-    from services.db import get_user_role
+
     role = await get_user_role(tg_id, config.admin_ids or [])
 
     if role in ("support", "admin"):
@@ -116,6 +111,14 @@ async def client_message(message: Message):
         media_file_id=file_id,
     )
 
+    ticket = await get_ticket(ticket_id)
+
+    if ticket["taken_at"]:
+        await start_ticket_sla(ticket_id)
+
+    if not is_working_hours():
+        await message.answer(MSG_OFFLINE)
+
     # -------------------------------------------------
     # 2️⃣ NEW → запускаем онбординг
     # -------------------------------------------------
@@ -155,6 +158,8 @@ async def client_message(message: Message):
 
             lead_id = await complete_onboarding(tg_id, raw)
 
+            await activate_ticket(ticket_id)
+
             # переводим NEW → LEAD
             await set_client_type(tg_id, ClientType.LEAD)
 
@@ -174,11 +179,10 @@ async def client_message(message: Message):
                 last_message=last_msg,
             )
 
+            await start_ticket_sla(ticket_id)
+
             if card_msg_id:
-
                 await set_ticket_card_message_id(ticket_id, card_msg_id)
-                await start_ticket_sla(ticket_id)
-
                 await update_ticket_card(
                     message.bot,
                     ticket_id,
@@ -214,9 +218,6 @@ async def client_message(message: Message):
 
         if card_msg_id:
             await set_ticket_card_message_id(ticket_id, card_msg_id)
-
-            # Запуск SLA
-            await start_ticket_sla(ticket_id)
 
     else:
         ticket = await get_ticket(ticket_id)

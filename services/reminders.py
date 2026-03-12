@@ -1,7 +1,7 @@
 import asyncio
 from datetime import datetime, timedelta, timezone
-from services.db import get_pool
 from constants import ONE_PING_USER, TWO_PING_USER, FHREE_PING_USER, FOUR_PING_USER, FIVE_PING_USER
+from database import get_pool
 
 MESSAGES = [
     (30, ONE_PING_USER),
