@@ -36,6 +36,9 @@ async def escalation_watcher(bot):
                     start_time = t["sla_started_at"]
                     mode = "reply"  # ждём ответа саппорта
 
+                if start_time is None:
+                    continue
+                    
                 minutes_passed = working_minutes_between(start_time, now)
 
                 # ⚠️ Первая стадия: предупреждение саппорта
