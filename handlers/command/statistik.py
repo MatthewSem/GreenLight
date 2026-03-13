@@ -34,7 +34,6 @@ async def build_stats_block(date_from, date_to, tg_support: int | None = None) -
 
     return (
         f"Лиды: {leads}\n"
-        f"Среднее время ответа: {avg_time_text}\n"
         f"Среднее время первого ответа: {avg_time_text}\n"
         f"Среднее время ответа саппорта: {avg_reply_text}\n"
         # f"Сообщений до ответа: {avg_msg}\n"
