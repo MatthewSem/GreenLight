@@ -33,7 +33,7 @@ async def escalation_watcher(bot):
                     mode = "take"  # никто не взял
                 else:
                     # тикет взят — считаем с момента взятия
-                    start_time = t["taken_at"]
+                    start_time = t["sla_started_at"]
                     mode = "reply"  # ждём ответа саппорта
 
                 minutes_passed = working_minutes_between(start_time, now)
