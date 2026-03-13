@@ -112,6 +112,25 @@ class Database:
                 )
             """)
             await conn.execute("""
+                           CREATE TABLE IF NOT EXISTS referrals (
+                               referral_id SERIAL PRIMARY KEY,
+                               code TEXT NOT NULL UNIQUE,                     -- уникальный код ссылки
+                               owner_client_id BIGINT NOT NULL REFERENCES users(tg_id), -- клиент, к которому привязана ссылка
+                               created_by BIGINT NOT NULL REFERENCES users(tg_id),      -- кто создал (админ/саппорт/клиент)
+                               created_at TIMESTAMPTZ DEFAULT NOW()
+                           )
+                       """)
+
+            await conn.execute("""
+                           CREATE TABLE IF NOT EXISTS referral_usage (
+                               usage_id SERIAL PRIMARY KEY,
+                               referral_id INT NOT NULL REFERENCES referrals(referral_id) ON DELETE CASCADE,
+                               visitor_client_id BIGINT REFERENCES users(tg_id), -- кто перешёл (если зарегистрирован)
+                               visited_at TIMESTAMPTZ DEFAULT NOW(),
+                               converted BOOLEAN DEFAULT FALSE                  -- стал ли посетитель клиентом
+                           )
+                       """)
+            await conn.execute("""
                 CREATE TABLE IF NOT EXISTS onboarding_state (
                     tg_id BIGINT PRIMARY KEY REFERENCES users(tg_id),
                     current_step INTEGER DEFAULT 1,
@@ -119,6 +138,11 @@ class Database:
                     created_at TIMESTAMPTZ DEFAULT NOW()
                 )
             """)
+            await conn.execute("""
+                            ALTER TABLE users
+                            ADD COLUMN IF NOT EXISTS keyboard_version INT DEFAULT 0;
+                        """)
+
 
 
 def get_pool() -> asyncpg.Pool:

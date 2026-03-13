@@ -15,6 +15,7 @@ class Config:
     support_group_id: int = 0
     admin_chat_id: int = 0
     private_chat_id: int = 0
+    bot_username: str = "GreenLight_Partner_bot"
 
     # Database
     database_url: str = ""
@@ -60,6 +61,7 @@ class Config:
             spreadsheet_id=os.getenv("SPREADSHEET_ID", ""),
             sheet_name=os.getenv("SHEET_NAME", "Лиды"),
             sheet_name_client=os.getenv("SHEET_NAME_CLIENT", "Клиенты"),
+            bot_username=os.getenv("BOT_USERNAME", "GreenLinghtTest_bot"),
             timezone=os.getenv("TIMEZONE", "Europe/Moscow"),
             work_start_hour=int(os.getenv("WORK_START_HOUR", "10")),
             work_end_hour=int(os.getenv("WORK_END_HOUR", "22")),

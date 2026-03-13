@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from config import config
 from services.db.statistik import get_avg_first_reply_time, get_avg_messages_before_reply, get_sla_violations, \
-    get_leads_count
+    get_leads_count, get_avg_reply_time
 from services.db.tickets import get_all_supports
 from services.db.users import get_user_role
 
@@ -17,16 +17,27 @@ async def build_stats_block(date_from, date_to, tg_support: int | None = None) -
     avg_msg = await get_avg_messages_before_reply(date_from, date_to, tg_support)
     violations = await get_sla_violations(date_from, date_to, tg_support)
     leads = await get_leads_count(date_from, date_to, tg_support)
+    avg_reply_seconds = await get_avg_reply_time(date_from, date_to, tg_support)
     if avg_seconds:
         minutes = int(avg_seconds // 60)
         seconds = int(avg_seconds % 60)
         avg_time_text = f"{minutes}м {seconds}с"
     else:
         avg_time_text = "—"
+
+    if avg_reply_seconds:
+        minutes = int(avg_reply_seconds // 60)
+        seconds = int(avg_reply_seconds % 60)
+        avg_reply_text = f"{minutes}м {seconds}с"
+    else:
+        avg_reply_text = "—"
+
     return (
         f"Лиды: {leads}\n"
         f"Среднее время ответа: {avg_time_text}\n"
-        f"Сообщений до ответа: {avg_msg}\n"
+        f"Среднее время первого ответа: {avg_time_text}\n"
+        f"Среднее время ответа саппорта: {avg_reply_text}\n"
+        # f"Сообщений до ответа: {avg_msg}\n"
         f"Нарушения SLA (>{config.sla_minutes} мин): {violations}"
     )
 

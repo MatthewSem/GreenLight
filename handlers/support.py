@@ -1,17 +1,16 @@
 """Обработчики для Support Group — кнопки тикетов."""
 import logging
-from datetime import datetime
 
+from services.crm import send_client_to_crm
 from services.db.sla import stop_ticket_sla
 from services.db.tickets import get_support_active_tickets, get_ticket, get_client_username, get_ticket_messages, \
     take_ticket, update_ticket_status, set_ticket_thread_id, set_ticket_topic_card_message_id, \
     get_history_messages_full, add_message, set_first_reply_if_needed, get_lead_by_client_tg_id, \
-    get_user_id_by_username, get_open_tickets_by_support, transfer_ticket
+    get_user_id_by_username, get_open_tickets_by_support, transfer_ticket, set_client_type
 from services.db.users import get_user_role, get_user_client_type, mark_user_as_paid
 
 logger = logging.getLogger(__name__)
 from aiogram import Router, F
-from io import BytesIO
 from aiogram.types import CallbackQuery, Message, BufferedInputFile, InputMediaPhoto, InputMediaDocument, InputMediaAudio, InputMediaVideo
 from aiogram.filters import Command
 from constants import MSG_REPLY_PROMPT, ClientType, QUICK_REPLIES_MAP
@@ -21,7 +20,7 @@ from services.support_chat import (
     send_ticket_to_support_group,
     refresh_ticket_card,
 )
-from keyboards import ticket_kb, ticket_status_kb, ticket_quick_replies_kb
+from keyboards import ticket_status_kb, ticket_quick_replies_kb
 from config import config
 
 router = Router(name="support")
@@ -62,18 +61,14 @@ async def _check_support(callback: CallbackQuery) -> bool:
     return role in ("support", "admin")
 
 async def check_ticket_status(cb: CallbackQuery, ticket: dict) -> bool:
-    """
-    Проверяет статус тикета при работе с CallbackQuery.
-    Отправляет alert при невозможности действия.
-    Возвращает True, если тикет доступен для действий (WAITING), False — если нельзя продолжать.
-    """
     status = ticket.get("status") or "OPEN"
     if status == "CLOSED":
         await cb.answer(
-            "Тикет закрыт. Доступны только «История» и «Статус» (можно открыть заново).",
+            "Тикет закрыт. Доступен только «Статус» (можно открыть заново).",
             show_alert=True,
         )
         return False
+
     if status == "OPEN":
         await cb.answer(
             "Сначала возьмите тикет кнопкой «Взять».",
@@ -301,9 +296,6 @@ async def ticket_callback(cb: CallbackQuery):
             await cb.answer("Тикет не найден", show_alert=True)
             return
 
-        if not await check_ticket_status(cb, ticket):
-            return
-
         # ===== Проверка прав через can_manage_ticket =====
         if not await can_manage_ticket(cb.from_user.id, ticket):
             assigned_id = ticket.get("assigned_to_support_id")
@@ -431,7 +423,7 @@ async def ticket_callback(cb: CallbackQuery):
         client_username = await get_client_username(client_tg_id)
 
         # 🔁 Отправка в CRM (перевод лида → клиент)
-        from services.crm import send_client_to_crm
+
 
         ok = await send_client_to_crm(
             lead_id=ticket_id,
@@ -447,7 +439,7 @@ async def ticket_callback(cb: CallbackQuery):
             return
 
         # 🏷 Меняем тип клиента
-        from services.db import set_client_type
+
         await set_client_type(client_tg_id, ClientType.EXISTING)
         await mark_user_as_paid(client_tg_id)
 
@@ -571,8 +563,6 @@ async def status_callback(cb: CallbackQuery):
         await cb.answer("Тикет не найден", show_alert=True)
         return
 
-    if not await check_ticket_status(cb, ticket):
-        return
 
     # ===== Проверка прав через can_manage_ticket =====
     if not await can_manage_ticket(cb.from_user.id, ticket):

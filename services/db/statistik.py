@@ -103,3 +103,77 @@ async def get_avg_messages_before_reply(date_from: datetime, date_to: datetime, 
 
     return float(row["avg_messages"]) if row and row["avg_messages"] else None
 
+async def get_avg_reply_time(date_from, date_to, tg_id=None):
+    """
+    Среднее время ответа саппорта на сообщения клиента (в секундах).
+    """
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        params = [date_from, date_to]
+
+        sql = """
+                WITH pairs AS (
+
+                    SELECT
+                        c.ticket_id,
+                        c.created_at AS client_time,
+                        MIN(s.created_at) AS support_time
+                    FROM messages c
+                    JOIN messages s
+                      ON s.ticket_id = c.ticket_id
+                     AND s.direction = 'OUT'
+                     AND s.created_at > c.created_at
+                """
+
+        if tg_id:
+            sql += " AND s.author_user_id = $3 "
+            params.append(tg_id)
+
+        sql += """
+            WHERE c.direction = 'IN'
+            AND c.created_at BETWEEN $1 AND $2
+            GROUP BY c.ticket_id, c.created_at
+        ),
+
+        days AS (
+
+            SELECT
+                ticket_id,
+                client_time,
+                support_time,
+                generate_series(
+                    date_trunc('day', client_time),
+                    date_trunc('day', support_time),
+                    interval '1 day'
+                ) AS day
+            FROM pairs
+        ),
+
+        work_intervals AS (
+
+            SELECT
+                ticket_id,
+
+                GREATEST(
+                    client_time,
+                    (day + time '10:00') AT TIME ZONE 'Europe/Moscow'
+                ) AS start_time,
+
+                LEAST(
+                    support_time,
+                    (day + time '22:00') AT TIME ZONE 'Europe/Moscow'
+                ) AS end_time
+
+            FROM days
+        )
+
+        SELECT AVG(
+            EXTRACT(EPOCH FROM (end_time - start_time))
+        ) AS avg_seconds
+        FROM work_intervals
+        WHERE end_time > start_time
+        """
+
+        row = await conn.fetchrow(sql, *params)
+
+    return float(row["avg_seconds"]) if row and row["avg_seconds"] else None
