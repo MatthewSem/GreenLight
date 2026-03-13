@@ -369,3 +369,11 @@ async def mark_user_active(tg_id: int):
         """, tg_id)
 
 
+async def update_created_at_for_draft_on_open(ticket_id: int):
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute("""
+            UPDATE tickets
+            SET created_at = NOW()
+            WHERE ticket_id = $1
+        """, ticket_id)

@@ -38,7 +38,7 @@ async def escalation_watcher(bot):
 
                 if start_time is None:
                     continue
-                    
+
                 minutes_passed = working_minutes_between(start_time, now)
 
                 # ⚠️ Первая стадия: предупреждение саппорта

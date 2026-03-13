@@ -19,7 +19,8 @@ from config import config
 from services.db.onboarding import get_onboarding_state, start_onboarding, save_onboarding_answer, complete_onboarding
 from services.db.sla import start_ticket_sla
 from services.db.tickets import upsert_user_with_client_type, mark_user_active, add_message, \
-    get_or_create_active_ticket, get_ticket, activate_ticket, set_client_type, set_ticket_card_message_id
+    get_or_create_active_ticket, get_ticket, activate_ticket, set_client_type, set_ticket_card_message_id, \
+    update_created_at_for_draft_on_open
 from services.db.users import get_user_role, get_or_create_user
 from services.working_hours import is_working_hours
 from services.crm import send_lead_to_crm
@@ -207,7 +208,7 @@ async def client_message(message: Message):
                 client_type_label=client_label,
                 last_message=last_msg,
             )
-
+            await update_created_at_for_draft_on_open(ticket_id)
             await start_ticket_sla(ticket_id)
 
             if card_msg_id:
