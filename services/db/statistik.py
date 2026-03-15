@@ -76,33 +76,6 @@ async def get_sla_violations(date_from: datetime, date_to: datetime, tg_id: Opti
 # =====================================
 # Среднее количество сообщений до ответа
 # =====================================
-async def get_avg_messages_before_reply(date_from: datetime, date_to: datetime, tg_id: Optional[int] = None) -> Optional[float]:
-    pool = await get_pool()
-    async with pool.acquire() as conn:
-        sql = """
-            SELECT AVG(msg_count)::numeric(10,2) AS avg_messages
-            FROM (
-                SELECT t.ticket_id,
-                       COUNT(m.*) AS msg_count
-                FROM tickets t
-                LEFT JOIN messages m
-                    ON m.ticket_id = t.ticket_id
-                   AND m.direction = 'IN'  -- только сообщения от клиента
-                   AND m.created_at <= t.first_reply_at
-                WHERE t.first_reply_at IS NOT NULL
-                  AND t.created_at BETWEEN $1 AND $2
-        """
-        params = [date_from, date_to]
-
-        if tg_id:
-            sql += " AND t.assigned_to_support_id = $3"
-            params.append(tg_id)
-
-        sql += " GROUP BY t.ticket_id) sub"
-        row = await conn.fetchrow(sql, *params)
-
-    return float(row["avg_messages"]) if row and row["avg_messages"] else None
-
 async def get_avg_reply_time(date_from, date_to, tg_id=None):
     """
     Среднее время ответа саппорта на сообщения клиента (в секундах).

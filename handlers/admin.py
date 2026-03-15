@@ -13,6 +13,8 @@ from zoneinfo import ZoneInfo
 
 from services.db.tickets import get_tickets_by_status, get_all_users_with_start, set_role
 from services.db.users import get_user_role, get_users_by_type
+from utils.media_extractor import extract_media
+from utils.media_sender import send_media
 
 logger = logging.getLogger(__name__)
 router = Router(name="admin")
@@ -27,6 +29,7 @@ def now_local():
 def start_of_day_local(dt: datetime):
     """Начало дня в заданной таймзоне."""
     return datetime(dt.year, dt.month, dt.day, tzinfo=TZ)
+
 
 # Ожидание контента: {admin_tg_id: (content_type, text, file_id)}
 broadcast_content: dict[int, tuple[str, str, str | None]] = {}
@@ -166,25 +169,11 @@ async def broadcast_receive_content(message: Message):
     tg_id = message.from_user.id
     broadcast_awaiting.discard(tg_id)
 
-    content_type = "text"
     text = message.text or message.caption or ""
-    file_id = None
+    content_type, file_id = extract_media(message)
 
-    if message.photo:
-        content_type = "photo"
-        file_id = message.photo[-1].file_id
-    elif message.document:
-        content_type = "document"
-        file_id = message.document.file_id
-    elif message.video:
-        content_type = "video"
-        file_id = message.video.file_id
-    elif message.voice:
-        content_type = "voice"
-        file_id = message.voice.file_id
-    elif message.audio:
-        content_type = "audio"
-        file_id = message.audio.file_id
+    if not content_type:
+        content_type = "text"
 
     broadcast_content[tg_id] = (content_type, text, file_id)
 
@@ -252,18 +241,13 @@ async def _do_broadcast(bot, admin_tg_id: int, content: tuple):
         batch = user_ids[i : i + batch_size]
         for uid in batch:
             try:
-                if content_type == "photo":
-                    await bot.send_photo(uid, file_id, caption=text or None)
-                elif content_type == "document":
-                    await bot.send_document(uid, file_id, caption=text or None)
-                elif content_type == "video":
-                    await bot.send_video(uid, file_id, caption=text or None)
-                elif content_type == "voice":
-                    await bot.send_voice(uid, file_id, caption=text or None)
-                elif content_type == "audio":
-                    await bot.send_audio(uid, file_id, caption=text or None)
-                else:
-                    await bot.send_message(uid, text or "(пусто)")
+                await send_media(
+                    bot=bot,
+                    chat_id=uid,
+                    media_type=content_type,
+                    file_id=file_id,
+                    caption=text or None
+                )
                 success += 1
             except Exception as e:
                 logger.warning("Broadcast не доставлен uid=%s: %s", uid, e)

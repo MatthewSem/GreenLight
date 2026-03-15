@@ -23,17 +23,19 @@ def ticket_kb(
 
     if not is_taken:
         buttons.append([InlineKeyboardButton(text="✅ Взять", callback_data=f"ticket:take:{ticket_id}")])
-    buttons.extend([
-        [InlineKeyboardButton(text="✉️ Ответить", callback_data=f"ticket:reply:{ticket_id}")],
-        [
-            InlineKeyboardButton(text="📜 История", callback_data=f"ticket:history:{ticket_id}"),
-            InlineKeyboardButton(text="🟡 Статус", callback_data=f"ticket:status:{ticket_id}"),
-        ],
-        [InlineKeyboardButton(text="📋 Просмотреть онбординг",callback_data=f"view_onboarding:{ticket_id}")],
-        [InlineKeyboardButton(text="💰 Оплатил", callback_data=f"ticket:paid:{ticket_id}")],
-        [InlineKeyboardButton(text="⚡ Скрипты", callback_data=f"ticket:quick_menu:{ticket_id}")],
-        [InlineKeyboardButton(text="⛔ Эскалация", callback_data=f"ticket:escalate:{ticket_id}")],
-    ])
+    else:
+        buttons.extend([
+            [InlineKeyboardButton(text="✉️ Ответить", callback_data=f"ticket:reply:{ticket_id}")],
+            [
+                InlineKeyboardButton(text="📜 История", callback_data=f"ticket:history:{ticket_id}"),
+                InlineKeyboardButton(text="🟡 Статус", callback_data=f"ticket:status:{ticket_id}"),
+            ],
+            [InlineKeyboardButton(text="📋 Просмотреть онбординг", callback_data=f"view_onboarding:{ticket_id}")],
+            [InlineKeyboardButton(text="💰 Оплатил", callback_data=f"ticket:paid:{ticket_id}")],
+            [InlineKeyboardButton(text="⚡ Скрипты", callback_data=f"ticket:quick_menu:{ticket_id}")],
+            [InlineKeyboardButton(text="⛔ Эскалация", callback_data=f"ticket:escalate:{ticket_id}")],
+        ])
+
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 

@@ -2,15 +2,14 @@
 import logging
 from datetime import timezone, timedelta
 from aiogram import Bot
-from aiogram.types import InlineKeyboardMarkup
 from aiogram.exceptions import TelegramBadRequest, TelegramAPIError
 
 from config import config
-from keyboards import ticket_kb, ticket_status_kb
+from keyboards import ticket_kb
 
-from constants import MSG_REPLY_PROMPT
 from services.db.tickets import get_ticket, get_client_username, get_ticket_messages
 from services.db.users import get_user_client_type
+from utils.media_sender import send_media
 
 logger = logging.getLogger(__name__)
 
@@ -108,48 +107,15 @@ async def send_new_client_message_to_topic(
     try:
         caption = f"📩 Новое сообщение от клиента (Ticket #{ticket_id}):\n\"{(text or '')[:500]}{'...' if text and len(text) > 500 else ''}\"" if text else None
 
-        if media_type == "photo":
-            await bot.send_photo(
-                chat_id=config.support_group_id,
-                photo=media_file_id,
-                caption=caption,
-                message_thread_id=support_thread_id
-            )
-        elif media_type == "document":
-            await bot.send_document(
-                chat_id=config.support_group_id,
-                document=media_file_id,
-                caption=caption,
-                message_thread_id=support_thread_id
-            )
-        elif media_type == "video":
-            await bot.send_video(
-                chat_id=config.support_group_id,
-                video=media_file_id,
-                caption=caption,
-                message_thread_id=support_thread_id
-            )
-        elif media_type == "voice":
-            await bot.send_voice(
-                chat_id=config.support_group_id,
-                voice=media_file_id,
-                caption=caption,
-                message_thread_id=support_thread_id
-            )
-        elif media_type == "audio":
-            await bot.send_audio(
-                chat_id=config.support_group_id,
-                audio=media_file_id,
-                caption=caption,
-                message_thread_id=support_thread_id
-            )
-        else:
-            # Просто текст
-            await bot.send_message(
-                chat_id=config.support_group_id,
-                text=caption or "(медиа)",
-                message_thread_id=support_thread_id
-            )
+        await send_media(
+            bot=bot,
+            chat_id=config.support_group_id,
+            media_type=media_type,
+            file_id=media_file_id,
+            caption=caption,
+            message_thread_id=support_thread_id
+        )
+
     except (TelegramBadRequest, TelegramAPIError) as e:
         logger.warning(f"Не удалось отправить уведомление в тему тикета #{ticket_id}: {e}")
 
@@ -237,6 +203,7 @@ async def refresh_ticket_card(bot: Bot, ticket_id: int) -> None:
         )
     except (TelegramBadRequest, TelegramAPIError) as e:
         logger.debug("Не удалось обновить карточку тикета %s: %s", ticket_id, e)
+
 
 async def send_warning_to_support(
     bot: Bot,

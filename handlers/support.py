@@ -8,6 +8,8 @@ from services.db.tickets import get_support_active_tickets, get_ticket, get_clie
     get_history_messages_full, add_message, set_first_reply_if_needed, get_lead_by_client_tg_id, \
     get_user_id_by_username, get_open_tickets_by_support, transfer_ticket, set_client_type
 from services.db.users import get_user_role, get_user_client_type, mark_user_as_paid
+from utils.media_extractor import extract_media
+from utils.media_sender import send_media
 
 logger = logging.getLogger(__name__)
 from aiogram import Router, F
@@ -357,41 +359,14 @@ async def ticket_callback(cb: CallbackQuery):
                 await flush_text()
                 caption = f"{header}\n{media_label(mt)}"
                 try:
-                    if mt == "photo":
-                        await cb.message.bot.send_photo(
-                            config.support_group_id,
-                            fid,
-                            caption=caption,
-                            **send_kw
-                        )
-                    elif mt == "voice":
-                        await cb.message.bot.send_voice(
-                            config.support_group_id,
-                            fid,
-                            caption=caption,
-                            **send_kw
-                        )
-                    elif mt == "document":
-                        await cb.message.bot.send_document(
-                            config.support_group_id,
-                            fid,
-                            caption=caption,
-                            **send_kw
-                        )
-                    elif mt == "video":
-                        await cb.message.bot.send_video(
-                            config.support_group_id,
-                            fid,
-                            caption=caption,
-                            **send_kw
-                        )
-                    elif mt == "audio":
-                        await cb.message.bot.send_audio(
-                            config.support_group_id,
-                            fid,
-                            caption=caption,
-                            **send_kw
-                        )
+                    await send_media(
+                        bot=cb.message.bot,
+                        chat_id=config.support_group_id,
+                        media_type=mt,
+                        file_id=fid,
+                        caption=caption,
+                        **send_kw
+                    )
                 except Exception:
                     pass
         await flush_text()
@@ -618,17 +593,7 @@ async def support_reply_message(message: Message):
         await message.bot.send_message(config.support_group_id, "Сначала возьмите тикет кнопкой «Взять».")
         return
 
-    media_type = media_file_id = None
-    if message.photo:
-        media_type, media_file_id = "photo", message.photo[-1].file_id
-    elif message.document:
-        media_type, media_file_id = "document", message.document.file_id
-    elif message.video:
-        media_type, media_file_id = "video", message.video.file_id
-    elif message.voice:
-        media_type, media_file_id = "voice", message.voice.file_id
-    elif message.audio:
-        media_type, media_file_id = "audio", message.audio.file_id
+    media_type, media_file_id = extract_media(message)
 
     client_tg_id = ticket["client_user_id"]
     text = message.text or message.caption or ""
@@ -649,20 +614,14 @@ async def support_reply_message(message: Message):
 
     # Отправка клиенту в личку бота (chat_id = user id)
     try:
-        bot = message.bot
-        if media_type == "photo":
-            await bot.send_photo(chat_id=client_tg_id, photo=media_file_id, caption=text or None)
-        elif media_type == "document":
-            await bot.send_document(chat_id=client_tg_id, document=media_file_id, caption=text or None)
-        elif media_type == "video":
-            await bot.send_video(chat_id=client_tg_id, video=media_file_id, caption=text or None)
-        elif media_type == "voice":
-            await bot.send_voice(chat_id=client_tg_id, voice=media_file_id, caption=text or None)
-        elif media_type == "audio":
-            await bot.send_audio(chat_id=client_tg_id, audio=media_file_id, caption=text or None)
-        else:
-            await bot.send_message(chat_id=client_tg_id, text=text or "(медиа)")
-        await bot.send_message(chat_id=config.support_group_id, **confirm_kw)
+        await send_media(
+            bot=message.bot,
+            chat_id=client_tg_id,
+            media_type=media_type,
+            file_id=media_file_id,
+            caption=text or None
+        )
+        await message.bot.send_message(chat_id=config.support_group_id, **confirm_kw)
     except Exception as e:
         logger.warning(
             "Не удалось отправить ответ клиенту chat_id=%s (ticket #%s): %s",
